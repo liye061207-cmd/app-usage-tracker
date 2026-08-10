@@ -3,7 +3,6 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(express.json());
 
-// 跨域支持
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -14,7 +13,7 @@ app.use((req, res, next) => {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// ---- 上报接口 ----
+// ---- 上报接口（不变） ----
 app.post('/track', async (req, res) => {
   const { device, app_name, action, event_time } = req.body;
   const { data, error } = await supabase.from('usage_logs').insert([{
@@ -25,7 +24,7 @@ app.post('/track', async (req, res) => {
   res.json({ success: true, data });
 });
 
-// ---- MCP 服务器（包含时长计算） ----
+// ---- MCP 服务器（支持任意 App） ----
 app.all('/mcp', async (req, res) => {
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -54,13 +53,15 @@ app.all('/mcp', async (req, res) => {
       id: id,
       result: {
         tools: [{
-          name: 'query_wechat_usage',
-          description: '查询手机微信使用次数和时长',
+          name: 'query_app_usage',
+          description: '查询任意 App 的使用次数和时长（支持微信、小红书、抖音等）',
           inputSchema: {
             type: 'object',
             properties: {
+              app_name: { type: 'string', description: 'App 名称，如“微信”“小红书”“抖音”' },
               days: { type: 'integer', description: '最近几天，默认1' }
-            }
+            },
+            required: ['app_name']
           }
         }],
         _meta: { count: 1 }
@@ -69,7 +70,21 @@ app.all('/mcp', async (req, res) => {
   }
 
   if (method === 'tools/call') {
+    const app_name = params?.arguments?.app_name;
     const days = params?.arguments?.days || 1;
+
+    // 如果 AI 没传 app_name，就报错提示
+    if (!app_name) {
+      return res.json({
+        jsonrpc: '2.0',
+        id: id,
+        result: {
+          content: [{ type: 'text', text: '请告诉我你想查询哪个 App，例如“微信”或“小红书”。' }],
+          _meta: { success: false }
+        }
+      });
+    }
+
     const date = new Date();
     date.setDate(date.getDate() - parseInt(days));
     const fromDate = date.toISOString();
@@ -78,7 +93,7 @@ app.all('/mcp', async (req, res) => {
       .from('usage_logs')
       .select('*')
       .eq('device', 'iPhone')
-      .eq('app_name', '微信')
+      .eq('app_name', app_name)  // 动态传参
       .gte('created_at', fromDate)
       .order('created_at', { ascending: true });
 
@@ -89,6 +104,18 @@ app.all('/mcp', async (req, res) => {
         result: {
           content: [{ type: 'text', text: `查询失败: ${error.message}` }],
           _meta: { success: false }
+        }
+      });
+    }
+
+    // 如果数据为空，友好提示
+    if (data.length === 0) {
+      return res.json({
+        jsonrpc: '2.0',
+        id: id,
+        result: {
+          content: [{ type: 'text', text: `最近 ${days} 天没有找到“${app_name}”的使用记录。` }],
+          _meta: { success: true, total: 0 }
         }
       });
     }
@@ -112,14 +139,12 @@ app.all('/mcp', async (req, res) => {
       }
     }
 
-    // 如果最后还有未关闭的 open，算到当前时间
     if (openTime) {
       const now = new Date();
       const diff = Math.floor((now - openTime) / 1000);
       if (diff > 0) totalSeconds += diff;
     }
 
-    // 格式化
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const secs = totalSeconds % 60;
@@ -128,7 +153,7 @@ app.all('/mcp', async (req, res) => {
     if (minutes > 0) timeStr += `${minutes}分钟`;
     if (secs > 0 || timeStr === '') timeStr += `${secs}秒`;
 
-    const text = `最近 ${days} 天，微信共打开 ${openCount} 次，关闭 ${closeCount} 次，总使用时长 ${timeStr}。`;
+    const text = `最近 ${days} 天，“${app_name}”共打开 ${openCount} 次，关闭 ${closeCount} 次，总使用时长 ${timeStr}。`;
 
     return res.json({
       jsonrpc: '2.0',
