@@ -1,12 +1,9 @@
 {
-  "name": "app-usage-tracker",
+  "name": "usage-tracker",
   "version": "1.0.0",
-  "description": "记录 iPhone App 使用情况",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node index.js" },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "@supabase/supabase-js": "^2.45.0"
   }
 }
