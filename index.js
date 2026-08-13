@@ -13,7 +13,7 @@ app.use((req, res, next) => {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// ---- 上报接口（不变） ----
+// ---- 上报接口 ----
 app.post('/track', async (req, res) => {
   const { device, app_name, action, event_time } = req.body;
   const { data, error } = await supabase.from('usage_logs').insert([{
@@ -40,7 +40,7 @@ app.all('/mcp', async (req, res) => {
       result: {
         protocolVersion: '0.1.0',
         capabilities: { tools: {} },
-        serverInfo: { name: 'usage-tracker', version: '1.1.0' },
+        serverInfo: { name: 'usage-tracker', version: '1.0.0' },
         _meta: { connected: true }
       }
     });
@@ -62,82 +62,18 @@ app.all('/mcp', async (req, res) => {
               },
               required: ['app_name']
             }
-          },
-          {
-            name: 'save_memory',
-            description: '保存一条长期记忆（类型：情绪/身体/约定/关系/一般）',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                content: { type: 'string', description: '要记住的内容' },
-                type: { type: 'string', description: '记忆类型，默认general' }
-              },
-              required: ['content']
-            }
-          },
-          {
-            name: 'get_memories',
-            description: '读取最近的记忆',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                days: { type: 'integer', description: '最近几天，默认7' },
-                limit: { type: 'integer', description: '最多几条，默认20' }
-              }
-            }
           }
         ],
-        _meta: { count: 3 }
+        _meta: { count: 1 }
       }
     });
   }
 
   if (method === 'tools/call') {
-    // 从多个可能的位置取工具名（兼容不同客户端）
     const toolName = params?.name || params?.tool || params?.arguments?._tool || params?.arguments?.tool || '';
     const args = params?.arguments || {};
 
-    console.log('🔍 收到的工具名:', toolName);
-    console.log('📦 参数:', args);
-
-    // ---- 保存记忆 ----
-    if (toolName === 'save_memory') {
-      console.log('save_memory called:', JSON.stringify(args));
-      const content = String(args.content || '').trim();
-      if (!content) {
-        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '请提供要记住的内容。' }] } });
-      }
-      const type = String(args.type || 'general').trim();
-      const { data, error } = await supabase.from('memories').insert([{ content, type }]);
-      if (error) {
-        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `保存记忆失败: ${error.message}` }] } });
-      }
-      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '已记住。' }] } });
-    }
-
-    // ---- 读取记忆 ----
-    if (toolName === 'get_memories') {
-      const days = parseInt(args.days) || 7;
-      const limit = parseInt(args.limit) || 20;
-      const date = new Date();
-      date.setDate(date.getDate() - days);
-      const { data, error } = await supabase
-        .from('memories')
-        .select('content, type, created_at')
-        .gte('created_at', date.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      if (error) {
-        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `读取记忆失败: ${error.message}` }] } });
-      }
-      if (!data || data.length === 0) {
-        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '最近没有记忆。' }] } });
-      }
-      const text = data.map(m => `[${m.type}] ${m.content}`).join('\n');
-      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text }] } });
-    }
-
-    // ---- 查岗（原有逻辑） ----
+    // ---- 查岗 ----
     const app_name = args.app_name;
     const days = args.days || 1;
 
