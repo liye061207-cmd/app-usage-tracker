@@ -102,6 +102,7 @@ app.all('/mcp', async (req, res) => {
 
     // ---- 保存记忆 ----
     if (toolName === 'save_memory') {
+      console.log('save_memory called:', JSON.stringify(args));
       const content = String(args.content || '').trim();
       if (!content) {
         return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '请提供要记住的内容。' }] } });
