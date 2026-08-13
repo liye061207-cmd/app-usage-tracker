@@ -93,7 +93,7 @@ app.all('/mcp', async (req, res) => {
   }
 
   if (method === 'tools/call') {
-    const toolName =params?.arguments?.tool || '';
+    const toolName =params?.name || '';
     const args = params?.arguments || {};
 
     // ---- 保存记忆 ----
