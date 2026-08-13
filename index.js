@@ -93,8 +93,12 @@ app.all('/mcp', async (req, res) => {
   }
 
   if (method === 'tools/call') {
-    const toolName =params?.name || '';
+    // 从多个可能的位置取工具名（兼容不同客户端）
+    const toolName = params?.name || params?.tool || params?.arguments?._tool || params?.arguments?.tool || '';
     const args = params?.arguments || {};
+
+    console.log('🔍 收到的工具名:', toolName);
+    console.log('📦 参数:', args);
 
     // ---- 保存记忆 ----
     if (toolName === 'save_memory') {
