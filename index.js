@@ -24,7 +24,7 @@ app.post('/track', async (req, res) => {
   res.json({ success: true, data });
 });
 
-// ---- MCP 服务器（支持任意 App） ----
+// ---- MCP 服务器 ----
 app.all('/mcp', async (req, res) => {
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -36,12 +36,11 @@ app.all('/mcp', async (req, res) => {
 
   if (method === 'initialize') {
     return res.json({
-      jsonrpc: '2.0',
-      id: id,
+      jsonrpc: '2.0', id: id,
       result: {
         protocolVersion: '0.1.0',
         capabilities: { tools: {} },
-        serverInfo: { name: 'usage-tracker', version: '1.0.0' },
+        serverInfo: { name: 'usage-tracker', version: '1.1.0' },
         _meta: { connected: true }
       }
     });
@@ -49,40 +48,96 @@ app.all('/mcp', async (req, res) => {
 
   if (method === 'tools/list') {
     return res.json({
-      jsonrpc: '2.0',
-      id: id,
+      jsonrpc: '2.0', id: id,
       result: {
-        tools: [{
-          name: 'query_app_usage',
-          description: '查询任意 App 的使用次数和时长（支持微信、小红书、抖音等）',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              app_name: { type: 'string', description: 'App 名称，如“微信”“小红书”“抖音”' },
-              days: { type: 'integer', description: '最近几天，默认1' }
-            },
-            required: ['app_name']
+        tools: [
+          {
+            name: 'query_app_usage',
+            description: '查询任意 App 的使用次数和时长（支持微信、小红书、抖音等）',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                app_name: { type: 'string', description: 'App 名称，如“微信”“小红书”“抖音”' },
+                days: { type: 'integer', description: '最近几天，默认1' }
+              },
+              required: ['app_name']
+            }
+          },
+          {
+            name: 'save_memory',
+            description: '保存一条长期记忆（类型：情绪/身体/约定/关系/一般）',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                content: { type: 'string', description: '要记住的内容' },
+                type: { type: 'string', description: '记忆类型，默认general' }
+              },
+              required: ['content']
+            }
+          },
+          {
+            name: 'get_memories',
+            description: '读取最近的记忆',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                days: { type: 'integer', description: '最近几天，默认7' },
+                limit: { type: 'integer', description: '最多几条，默认20' }
+              }
+            }
           }
-        }],
-        _meta: { count: 1 }
+        ],
+        _meta: { count: 3 }
       }
     });
   }
 
   if (method === 'tools/call') {
-    const app_name = params?.arguments?.app_name;
-    const days = params?.arguments?.days || 1;
+    const toolName = params?.arguments?._tool || params?.arguments?.tool || '';
+    const args = params?.arguments || {};
 
-    // 如果 AI 没传 app_name，就报错提示
+    // ---- 保存记忆 ----
+    if (toolName === 'save_memory') {
+      const content = String(args.content || '').trim();
+      if (!content) {
+        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '请提供要记住的内容。' }] } });
+      }
+      const type = String(args.type || 'general').trim();
+      const { data, error } = await supabase.from('memories').insert([{ content, type }]);
+      if (error) {
+        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `保存记忆失败: ${error.message}` }] } });
+      }
+      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '已记住。' }] } });
+    }
+
+    // ---- 读取记忆 ----
+    if (toolName === 'get_memories') {
+      const days = parseInt(args.days) || 7;
+      const limit = parseInt(args.limit) || 20;
+      const date = new Date();
+      date.setDate(date.getDate() - days);
+      const { data, error } = await supabase
+        .from('memories')
+        .select('content, type, created_at')
+        .gte('created_at', date.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (error) {
+        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `读取记忆失败: ${error.message}` }] } });
+      }
+      if (!data || data.length === 0) {
+        return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '最近没有记忆。' }] } });
+      }
+      const text = data.map(m => `[${m.type}] ${m.content}`).join('\n');
+      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text }] } });
+    }
+
+    // ---- 查岗（原有逻辑） ----
+    const app_name = args.app_name;
+    const days = args.days || 1;
+
     if (!app_name) {
-      return res.json({
-        jsonrpc: '2.0',
-        id: id,
-        result: {
-          content: [{ type: 'text', text: '请告诉我你想查询哪个 App，例如“微信”或“小红书”。' }],
-          _meta: { success: false }
-        }
-      });
+      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: '请告诉我你想查询哪个 App，例如“微信”或“小红书”。' }] } });
     }
 
     const date = new Date();
@@ -93,34 +148,18 @@ app.all('/mcp', async (req, res) => {
       .from('usage_logs')
       .select('*')
       .eq('device', 'iPhone')
-      .eq('app_name', app_name)  // 动态传参
+      .eq('app_name', app_name)
       .gte('created_at', fromDate)
       .order('created_at', { ascending: true });
 
     if (error) {
-      return res.json({
-        jsonrpc: '2.0',
-        id: id,
-        result: {
-          content: [{ type: 'text', text: `查询失败: ${error.message}` }],
-          _meta: { success: false }
-        }
-      });
+      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `查询失败: ${error.message}` }] } });
     }
 
-    // 如果数据为空，友好提示
     if (data.length === 0) {
-      return res.json({
-        jsonrpc: '2.0',
-        id: id,
-        result: {
-          content: [{ type: 'text', text: `最近 ${days} 天没有找到“${app_name}”的使用记录。` }],
-          _meta: { success: true, total: 0 }
-        }
-      });
+      return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text: `最近 ${days} 天没有找到“${app_name}”的使用记录。` }] } });
     }
 
-    // ---- 计算总时长 ----
     let totalSeconds = 0;
     let openTime = null;
     let openCount = 0;
@@ -155,14 +194,7 @@ app.all('/mcp', async (req, res) => {
 
     const text = `最近 ${days} 天，“${app_name}”共打开 ${openCount} 次，关闭 ${closeCount} 次，总使用时长 ${timeStr}。`;
 
-    return res.json({
-      jsonrpc: '2.0',
-      id: id,
-      result: {
-        content: [{ type: 'text', text: text }],
-        _meta: { success: true, total: data.length, seconds: totalSeconds }
-      }
-    });
+    return res.json({ jsonrpc, id, result: { content: [{ type: 'text', text }] } });
   }
 
   res.json({ jsonrpc: '2.0', id: id, result: {}, _meta: {} });
