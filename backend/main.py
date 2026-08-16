@@ -17,18 +17,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.post("/api/upload")
-async def upload_events(app_name: str, start_time: str, end_time: str, duration_seconds: int):
-    supabase.table("app_sessions").insert({
-        "app_name": app_name,
-        "start_time": start_time,
-        "end_time": end_time,
-        "duration_seconds": duration_seconds
-    }).execute()
-    return {"status": "ok"}
-
-from fastapi import FastAPI, Request, Form
-
-@app.post("/api/upload")
 async def upload_events(
     app_name: str = Form(...),
     start_time: str = Form(...),
