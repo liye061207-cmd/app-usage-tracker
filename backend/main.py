@@ -27,9 +27,14 @@ class EventModel(BaseModel):
     duration_seconds: int
 
 # 1. Windows 上传数据接口
+import json
+
 @app.post("/api/upload")
-async def upload_events(event: EventModel):
-    supabase.table("app_sessions").insert(event.dict()).execute()
+async def upload_events(request: Request):
+    form = await request.form()
+    raw = form.get("data")
+    event = json.loads(raw)
+    supabase.table("app_sessions").insert(event).execute()
     return {"status": "ok"}
 
 # 2. iOS 快捷指令切换开关
