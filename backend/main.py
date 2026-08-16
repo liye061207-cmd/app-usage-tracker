@@ -28,9 +28,8 @@ class EventModel(BaseModel):
 
 # 1. Windows 上传数据接口
 @app.post("/api/upload")
-async def upload_events(events: List[EventModel]):
-    data = [e.dict() for e in events]
-    supabase.table("app_sessions").insert(data).execute()
+async def upload_events(event: EventModel):
+    supabase.table("app_sessions").insert(event.dict()).execute()
     return {"status": "ok"}
 
 # 2. iOS 快捷指令切换开关
