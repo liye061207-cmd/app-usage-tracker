@@ -26,13 +26,22 @@ async def upload_events(app_name: str, start_time: str, end_time: str, duration_
     }).execute()
     return {"status": "ok"}
 
-@app.post("/api/toggle")
-async def toggle_monitoring():
-    res = supabase.table("system_state").select("value").eq("key", "monitoring").execute()
-    current = res.data[0]["value"]
-    new_val = "false" if current == "true" else "true"
-    supabase.table("system_state").update({"value": new_val}).eq("key", "monitoring").execute()
-    return {"status": "ok", "monitoring": new_val}
+from fastapi import FastAPI, Request, Form
+
+@app.post("/api/upload")
+async def upload_events(
+    app_name: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    duration_seconds: int = Form(...)
+):
+    supabase.table("app_sessions").insert({
+        "app_name": app_name,
+        "start_time": start_time,
+        "end_time": end_time,
+        "duration_seconds": duration_seconds
+    }).execute()
+    return {"status": "ok"}
 
 @app.get("/api/status")
 async def get_status():
