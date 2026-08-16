@@ -1,10 +1,8 @@
 import os
-from typing import List
 from datetime import datetime
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
-from pydantic import BaseModel
 import uvicorn
 
 app = FastAPI()
@@ -15,29 +13,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 读取环境变量（Railway 里设置）
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-class EventModel(BaseModel):
-    app_name: str
-    start_time: str
-    end_time: str
-    duration_seconds: int
-
-# 1. Windows 上传数据接口
-import json
-
 @app.post("/api/upload")
-async def upload_events(request: Request):
-    form = await request.form()
-    raw = form.get("data")
-    event = json.loads(raw)
-    supabase.table("app_sessions").insert(event).execute()
+async def upload_events(app_name: str, start_time: str, end_time: str, duration_seconds: int):
+    supabase.table("app_sessions").insert({
+        "app_name": app_name,
+        "start_time": start_time,
+        "end_time": end_time,
+        "duration_seconds": duration_seconds
+    }).execute()
     return {"status": "ok"}
 
-# 2. iOS 快捷指令切换开关
 @app.post("/api/toggle")
 async def toggle_monitoring():
     res = supabase.table("system_state").select("value").eq("key", "monitoring").execute()
@@ -46,7 +35,6 @@ async def toggle_monitoring():
     supabase.table("system_state").update({"value": new_val}).eq("key", "monitoring").execute()
     return {"status": "ok", "monitoring": new_val}
 
-# 3. 查询当前状态
 @app.get("/api/status")
 async def get_status():
     res = supabase.table("system_state").select("value").eq("key", "monitoring").execute()
